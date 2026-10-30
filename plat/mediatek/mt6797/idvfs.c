@@ -58,7 +58,7 @@ int mt6797_idvfs_set_big_pll(unsigned int freq_mhz)
 	mmio_write_32(MT6797_BIG_ARMPLL_CON0, value);
 	udelay(1);
 
-	value = mmio_read_32(MT6797_BIG_ARMPLL_CON0) & ~U(0x7 << 12);
+	value = mmio_read_32(MT6797_BIG_ARMPLL_CON0) & ~U(0x7U << 12);
 	value |= (pos_div << 12);
 	mmio_write_32(MT6797_BIG_ARMPLL_CON0, value);
 

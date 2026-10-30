@@ -25,10 +25,14 @@ COMMON = r'''
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #define NOTICE(...) ((void)0)
 #define ERROR(...) ((void)0)
+#define INFO(...) ((void)0)
 #define PSCI_E_SUCCESS 0
 #define PSCI_E_INVALID_PARAMS -2
 #define PSCI_E_DENIED -3
 #define PSCI_E_INTERN_FAIL -6
+/* plat/mediatek/include/mtk_sip_svc.h return codes (used by idvfs.c). */
+#define MTK_SIP_E_SUCCESS 0
+#define MTK_SIP_E_INVALID_PARAM (-1)
 typedef uintptr_t u_register_t;
 typedef int spinlock_t;
 static unsigned int caller;
@@ -49,6 +53,13 @@ static int plat_core_pos_by_mpidr(u_register_t mpidr) {
     return (cl < 3 && core < (cl == 2 ? 2 : 4)) ? (int)(cl * 4 + core) : -1;
 }
 static void bl31_warm_entrypoint(void) {}
+/* boot_power.c runs a raw I2C6 DA9214 transaction; emulate only the result
+ * contract power.c depends on (PSCI_E_SUCCESS / PSCI_E_INTERN_FAIL). */
+static int stub_buck_fail, stub_buck_calls;
+static int mt6797_boot_buck_enable(void) {
+    stub_buck_calls++;
+    return stub_buck_fail ? PSCI_E_INTERN_FAIL : PSCI_E_SUCCESS;
+}
 struct reg { uintptr_t addr; uint32_t value; };
 static struct reg regs[512];
 static unsigned int reg_count;
@@ -63,9 +74,17 @@ static uint32_t *regp(uintptr_t addr) {
 }
 static uint32_t mmio_read_32(uintptr_t addr) { reads++; return *regp(addr); }
 static void mmio_write_32(uintptr_t addr, uint32_t value);
+static void mmio_setbits_32(uintptr_t addr, uint32_t set);
+static void mmio_clrbits_32(uintptr_t addr, uint32_t clear);
 '''
 
 MMIO = r'''
+static void mmio_setbits_32(uintptr_t addr, uint32_t set) {
+    mmio_write_32(addr, mmio_read_32(addr) | set);
+}
+static void mmio_clrbits_32(uintptr_t addr, uint32_t clear) {
+    mmio_write_32(addr, mmio_read_32(addr) & ~clear);
+}
 static void mmio_write_32(uintptr_t addr, uint32_t value) {
     writes++;
     if (addr >= SPM_BASE && addr < SPM_BASE + 0x1000) spm_writes++;
@@ -112,6 +131,9 @@ static void setup(void) {
     memset(off_pending, 0, sizeof(off_pending));
     caller=0; little_on=0xff; big_on=3; big_cluster_on=true;
     reads=writes=spm_writes=delayed=fail_protect=0; power_lock=0; lock_depth=0;
+    stub_buck_fail=0; stub_buck_calls=0; kernel_power_ready=false;
+    *regp(MT6797_WDT_SWSYSRST)=0x88000000;
+    *regp(SPM_CPU_EXT_BUCK_ISO)=0x3;
     *regp(SPM_CPU_PWR_STATUS)=0xffc0 | BIT_32(17);
     *regp(SPM_CPU_PWR_STATUS_2ND)=0xffc0;
     *regp(MT6797_MP0_CA7L_MISC_CONFIG)=0xf000000;
@@ -126,6 +148,47 @@ static void setup(void) {
 }
 static u_register_t mpidr(unsigned int cpu) { return (cpu/4)*0x100+cpu%4; }
 int main(void) {
+    /* Kernel power bootstrap: success, one-shot, TOPRGU cleanup, DENIED for
+     * peers, buck-failure rollback and retry. */
+    setup();
+    assert(mt6797_kernel_power_prepare() == 0);
+    assert(mt6797_kernel_power_ready());
+    assert(stub_buck_calls == 1);
+    assert(*regp(SPM_MP2_CPUSYS_PWR_CON) & BIT_32(0));
+    assert((*regp(SPM_CPU_EXT_BUCK_ISO) & 0x3) == 0);
+    assert((*regp(MT6797_WDT_SWSYSRST) & (BIT_32(11)|U(0x88000000))) == U(0x88000000));
+    { unsigned int count=writes; assert(mt6797_kernel_power_prepare()==0 && writes==count); }
+    assert(stub_buck_calls == 1);           /* one-shot: no re-run */
+    assert(!power_lock && lock_depth == 0);
+
+    setup(); caller=5;
+    assert(mt6797_kernel_power_prepare() == PSCI_E_DENIED);
+    assert(!mt6797_kernel_power_ready() && !writes && !stub_buck_calls);
+    assert(!power_lock && lock_depth == 0);
+    caller=0;
+
+    setup(); stub_buck_fail=1;
+    assert(mt6797_kernel_power_prepare() == PSCI_E_INTERN_FAIL);
+    assert(!mt6797_kernel_power_ready() && stub_buck_calls == 1);
+    assert((*regp(SPM_CPU_EXT_BUCK_ISO) & 0x3) == 0x3);  /* rails stay isolated */
+    assert((*regp(MT6797_WDT_SWSYSRST) & BIT_32(11)) == 0); /* protect released */
+    stub_buck_fail=0;
+    assert(mt6797_kernel_power_prepare() == 0);  /* retry after failure */
+    assert(mt6797_kernel_power_ready() && stub_buck_calls == 2);
+    assert(!power_lock && lock_depth == 0);
+
+    /* Real idvfs SRAM LDO: range validation, eFuse calibration and encoding. */
+    setup();
+    assert(mt6797_idvfs_set_big_sram_ldo(59999U) == MTK_SIP_E_INVALID_PARAM);
+    assert(mt6797_idvfs_set_big_sram_ldo(120001U) == MTK_SIP_E_INVALID_PARAM);
+    assert(mt6797_idvfs_set_big_sram_ldo(110000U) == MTK_SIP_E_SUCCESS);
+    assert(*regp(MT6797_IDVFS_SRAM_LDO_CAL) == 0x7777);  /* no eFuse cal */
+    assert((*regp(MT6797_IDVFS_SRAM_LDO) & 0xfffU) == 0x8fbU);
+    *regp(0x1020666cUL) = 0x1234;
+    assert(mt6797_idvfs_set_big_sram_ldo(70000U) == MTK_SIP_E_SUCCESS);
+    assert(*regp(MT6797_IDVFS_SRAM_LDO_CAL) == 0x1234);
+    assert((*regp(MT6797_IDVFS_SRAM_LDO) & 0xfffU) == 0x8f2U);
+
     for (unsigned int cpu=1; cpu<10; cpu++) {
         setup();
         assert(mt6797_power_off_finish(mpidr(cpu)) == 0 && writes == 0);
@@ -165,6 +228,7 @@ int main(void) {
     assert(off_pending[4]); /* Partial protection ACK cannot mean fully OFF. */
     assert(!power_lock && lock_depth==0);
     puts("CPU1-9 physical off/on, peer-only/idempotence, last-cluster off, WFI/partial-ACK failures: PASS");
+    puts("Kernel power bootstrap: one-shot success, peer DENIED, buck-failure rollback+retry, real idvfs LDO: PASS");
 }
 '''
 
@@ -212,6 +276,9 @@ int main(void) {
 def main():
     platform = ROOT / 'plat/mediatek/mt6797'
     power = COMMON + without_includes(platform / 'include/platform_def.h') + MMIO
+    # The real idvfs unit provides mt6797_idvfs_set_big_sram_ldo so the
+    # bootstrap path calls actual register logic, not a stub.
+    power += without_includes(platform / 'idvfs.c')
     power += without_includes(platform / 'power.c') + POWER_TEST
     main_source = (ROOT / 'lib/psci/psci_main.c').read_text()
     affinity = main_source[main_source.index('int psci_affinity_info('):main_source.index('\nint psci_migrate(')]
