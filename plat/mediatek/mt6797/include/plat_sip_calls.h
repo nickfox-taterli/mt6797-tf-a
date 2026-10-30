@@ -1,0 +1,51 @@
+/*
+ * Copyright (c) 2026, Arm Limited and Contributors. All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#ifndef MT6797_PLAT_SIP_CALLS_H
+#define MT6797_PLAT_SIP_CALLS_H
+
+#include <lib/utils_def.h>
+
+/* Legacy MediaTek kernel handoff and DVFS calls used by the MT6797 LK. */
+#define MT6797_SIP_KERNEL_BOOT_AARCH32		U(0x82000200)
+#define MT6797_SIP_KERNEL_BOOT_AARCH64		U(0xc2000200)
+#define MT6797_SIP_KERNEL_MCUSYS_WRITE_AARCH32	U(0x82000201)
+#define MT6797_SIP_KERNEL_MCUSYS_WRITE_AARCH64	U(0xc2000201)
+#define MT6797_SIP_IDVFS_PLL_SET_FREQ_AARCH32	U(0x820003b8)
+#define MT6797_SIP_IDVFS_PLL_SET_FREQ_AARCH64	U(0xc20003b8)
+#define MT6797_SIP_IDVFS_SRAM_LDO_SET_AARCH32	U(0x820003bf)
+#define MT6797_SIP_IDVFS_SRAM_LDO_SET_AARCH64	U(0xc20003bf)
+#define MT6797_SIP_OCP_WRITE_AARCH32		U(0x8200035e)
+#define MT6797_SIP_OCP_WRITE_AARCH64		U(0xc200035e)
+#define MT6797_SIP_OCP_READ_AARCH32		U(0x8200035f)
+#define MT6797_SIP_OCP_READ_AARCH64		U(0xc200035f)
+
+/* Restricted ConSys EMI MPU service; arbitrary EMI writes stay unsupported. */
+#define MT6797_SIP_KERNEL_EMIMPU_READ_AARCH32	U(0x82000208)
+#define MT6797_SIP_KERNEL_EMIMPU_READ_AARCH64	U(0xc2000208)
+#define MT6797_SIP_KERNEL_EMIMPU_SET_AARCH32	U(0x82000209)
+#define MT6797_SIP_KERNEL_EMIMPU_SET_AARCH64	U(0xc2000209)
+
+/* X20 port capability query: x0 = supported PSCI sleep state, x1 = ABI v1.
+ * No registers are written. This is separate from the vendor SiP ABI.
+ */
+#define MT6797_SIP_SLEEP_CAPS_AARCH64		U(0xc2000679)
+#define MT6797_SIP_WDT_CAPTURE_AARCH64		U(0xc200067a)
+#define MT6797_SIP_TOPRGU_UPDATE_AARCH64		U(0xc200067b)
+#define MT6797_SIP_BOOT_CAPS_AARCH64		U(0xc200067c)
+#define MT6797_BOOT_CAPS_MAGIC			U(0x58323031)
+#define MT6797_BOOT_CAPS_ABI			U(1)
+/* Bit 0: one-shot external rails; bit 1: PSCI owns ACINACTM/CCI. */
+#define MT6797_BOOT_CAPS				U(3)
+#ifdef X20_WDT_FIQ
+#define MT6797_SIP_NUM_CALLS			U(12)
+#else
+#define MT6797_SIP_NUM_CALLS			U(11)
+#endif
+#define MT6797_SIP_OCP_BASE			UL(0x10220000)
+#define MT6797_SIP_OCP_SIZE			UL(0x00004000)
+
+#endif /* MT6797_PLAT_SIP_CALLS_H */
