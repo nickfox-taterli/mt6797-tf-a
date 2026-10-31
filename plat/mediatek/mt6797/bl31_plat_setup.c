@@ -180,8 +180,38 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 #endif
 }
 
+#ifdef X20_EARLY_MARKERS
+/*
+ * Bring-up stack probes, moved here from the generic entrypoint: report
+ * where the installed stack lives and prove both the legacy fixed vendor
+ * stack window and the current stack accept writes.  Diagnostic builds
+ * only; never compiled into a production image.
+ */
+void mt6797_stack_probes(void)
+{
+	uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+	volatile uint64_t *probe;
+
+	MT6797_SETUP_MARKER(sp >= 0x114000U && sp < 0x11a000U ? 'V' :
+			    (sp < 0x114000U ? '0' : 'X'));
+	probe = (volatile uint64_t *)0x114a80U;
+	for (unsigned int i = 0U; i < 8U; ++i)
+		probe[i] = 0U;
+	MT6797_SETUP_MARKER('T');
+	probe = (volatile uint64_t *)(sp - 64U);
+	for (unsigned int i = 0U; i < 8U; ++i)
+		probe[i] = 0U;
+	MT6797_SETUP_MARKER('S');
+}
+#endif /* X20_EARLY_MARKERS */
+
 void bl31_platform_setup(void)
 {
+#ifdef X20_EARLY_MARKERS
+	/* Before the WDT FIQ is armed: the probes write below the stack
+	 * pointer and must not race an EL3 FIQ using that memory. */
+	mt6797_stack_probes();
+#endif
 	generic_delay_timer_init();
 	mt_gic_driver_init();
 	mt_gic_init();

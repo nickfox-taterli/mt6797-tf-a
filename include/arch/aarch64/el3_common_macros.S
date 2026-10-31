@@ -15,19 +15,6 @@
 #include <lib/per_cpu/per_cpu_macros.S>
 #include <lib/xlat_tables/xlat_mmu_helpers.h>
 
-/* MT6797 replaces the early zeromem with a platform variant and skips the
- * RW-data invalidation in el3_entrypoint_common below: its BL31 image is
- * copied into place with the cache off by the SRAM boot stage, so the
- * invalidation is unnecessary and the platform zeromem covers the sections
- * the generic path would clear.  Both overrides are entry-critical and
- * guarded by the platform macro, matching the upstream pattern for
- * SoC-specific early init. */
-#if defined(MACH_MT6797)
-#define PLATFORM_EARLY_ZEROMEM mt6797_zeromem
-#else
-#define PLATFORM_EARLY_ZEROMEM zeromem
-#endif
-
 	/*
 	 * Helper macro to initialise EL3 registers we care about.
 	 */
@@ -321,9 +308,8 @@ feat_sctlr2_not_supported\@:
 	 * ---------------------------------------------------------------------
 	 */
 	.if \_init_c_runtime
-#if !defined(MACH_MT6797)
 #if defined(IMAGE_BL31) || (defined(IMAGE_BL2) && \
-				    BL2_RUNS_AT_EL3 && BL2_INV_DCACHE)
+			    BL2_RUNS_AT_EL3 && BL2_INV_DCACHE)
 		/* -------------------------------------------------------------
 		 * Invalidate the RW memory used by the BL31 image. This
 		 * includes the data and NOBITS sections. This is done to
@@ -368,7 +354,6 @@ feat_sctlr2_not_supported\@:
 		bl	inv_dcache_range
 #endif
 #endif
-#endif /* !MACH_MT6797 */
 #if defined(IMAGE_BL31)
 		adrp	x0, __PER_CPU_START__
 		add	x0, x0, :lo12:__PER_CPU_START__
@@ -378,11 +363,7 @@ feat_sctlr2_not_supported\@:
 #if (PLATFORM_NODE_COUNT > 1)
 		mov	x9, x1
 #endif /* (PLATFORM_NODE_COUNT > 1) */
-		bl	PLATFORM_EARLY_ZEROMEM
-#if defined(MACH_MT6797) && defined(X20_EARLY_MARKERS)
-		mov	w0, #0x46 /* F: primary per-cpu zeroing returned */
-		bl	mt6797_early_uart_putc
-#endif
+		bl	zeromem
 #if (PLATFORM_NODE_COUNT > 1)
 		/*
 		 * Zero-initialize per-cpu sections defined by the platform.
@@ -404,7 +385,7 @@ feat_sctlr2_not_supported\@:
 
 			/* x1 contains size param */
 			mov	x1, x9
-			bl	PLATFORM_EARLY_ZEROMEM
+			bl	zeromem
 
 		3:
 			add	x10, x10, #1
@@ -420,11 +401,7 @@ feat_sctlr2_not_supported\@:
 		adrp	x1, __BSS_END__
 		add	x1, x1, :lo12:__BSS_END__
 		sub	x1, x1, x0
-		bl	PLATFORM_EARLY_ZEROMEM
-#if defined(MACH_MT6797) && defined(X20_EARLY_MARKERS)
-		mov	w0, #0x47 /* G: BSS zeroing returned */
-		bl	mt6797_early_uart_putc
-#endif
+		bl	zeromem
 
 #if USE_COHERENT_MEM
 		adrp	x0, __COHERENT_RAM_START__
@@ -432,11 +409,7 @@ feat_sctlr2_not_supported\@:
 		adrp	x1, __COHERENT_RAM_END_UNALIGNED__
 		add	x1, x1, :lo12: __COHERENT_RAM_END_UNALIGNED__
 		sub	x1, x1, x0
-		bl	PLATFORM_EARLY_ZEROMEM
-#if defined(MACH_MT6797) && defined(X20_EARLY_MARKERS)
-		mov	w0, #0x48 /* H: coherent zeroing returned */
-		bl	mt6797_early_uart_putc
-#endif
+		bl	zeromem
 #endif
 
 #if defined(IMAGE_BL1) ||	\
@@ -459,11 +432,6 @@ feat_sctlr2_not_supported\@:
 	 * ---------------------------------------------------------------------
 	 */
 	msr	spsel, #0
-#if defined(MACH_MT6797) && defined(X20_EARLY_MARKERS)
-	/* K: SP_EL0 is selected; the platform stack has not been installed yet. */
-	mov	w0, #0x4b
-	bl	mt6797_early_uart_putc
-#endif
 
 	/* ---------------------------------------------------------------------
 	 * Allocate a stack whose memory will be marked as Normal-IS-WBWA when

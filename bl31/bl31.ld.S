@@ -44,10 +44,8 @@ SECTIONS {
     RAM_REGION_LENGTH = LENGTH(RAM);
     . = BL31_BASE;
 
-#if !defined(MACH_MT6797)
     ASSERT(. == ALIGN(PAGE_SIZE),
         "BL31_BASE address is not aligned on a page boundary.")
-#endif
 
     __BL31_START__ = .;
 
@@ -121,23 +119,10 @@ SECTIONS {
     } >RAM
 #else /* SEPARATE_CODE_AND_RODATA */
     .ro . : {
-#if !defined(MACH_MT6797)
         ASSERT(. == ALIGN(PAGE_SIZE),
         ".ro is not aligned on a page boundary.");
-#endif
 
         __RO_START__ = .;
-
-#if defined(MACH_MT6797)
-        /*
-         * The MT6797 ROM jumps to the vector table at BL31_BASE, while the
-         * vendor image aligns bl31_entrypoint to the following page.  Keep
-         * that externally visible layout for the first replacement image.
-         */
-        *runtime_exceptions.o(.vectors)
-        ASSERT(. == ALIGN(PAGE_SIZE),
-        "MT6797 vector table does not end on a page boundary.");
-#endif
 
         *bl31_entrypoint.o(.text*)
 
@@ -176,7 +161,6 @@ SECTIONS {
 
 #   include <lib/el3_runtime/pubsub_events.h>
 
-        /* MT6797 consumes its runtime vector above; keep any others here. */
         *(.vectors)
 
         __RO_END_UNALIGNED__ = .;
@@ -269,10 +253,6 @@ SECTIONS {
      * Define a linker symbol to mark the start of the RW memory area for this
      * image.
      */
-#if defined(MACH_MT6797)
-    /* Keep the Vendor MT6797 BL31 SRAM layout for the first replacement. */
-    . = MT6797_BL31_DATA_BASE;
-#endif
     __RW_START__ = . ;
 
     DATA_SECTION >RAM
@@ -308,28 +288,9 @@ SECTIONS {
     STACK_SECTION >NOBITS
     BSS_SECTION >NOBITS
     PER_CPU >NOBITS
-#if defined(MACH_MT6797)
-    .xlat_table MT6797_BL31_XLAT_BASE (NOLOAD) : {
-        __XLAT_TABLE_START__ = .;
-        *(.xlat_table)
-        __XLAT_TABLE_END__ = .;
-    } >NOBITS
-#else
     XLAT_TABLE_SECTION >NOBITS
-#endif
 
 #if USE_COHERENT_MEM
-#if defined(MACH_MT6797)
-    /* Keep coherent memory in the Vendor MT6797 SRAM window. */
-    .coherent_ram MT6797_BL31_COHERENT_BASE (NOLOAD) : ALIGN(PAGE_SIZE) {
-        __COHERENT_RAM_START__ = .;
-        *(.bakery_lock)
-        *(.tzfw_coherent_mem)
-        __COHERENT_RAM_END_UNALIGNED__ = .;
-        . = ALIGN(PAGE_SIZE);
-        __COHERENT_RAM_END__ = .;
-    } >NOBITS
-#else
     /*
      * The base address of the coherent memory section must be page-aligned to
      * guarantee that the coherent data are stored on their own pages and are
@@ -357,7 +318,6 @@ SECTIONS {
 
         __COHERENT_RAM_END__ = .;
     } >NOBITS
-#endif /* MACH_MT6797 */
 #endif /* USE_COHERENT_MEM */
 
 #if SEPARATE_NOBITS_REGION

@@ -64,10 +64,15 @@ func bl31_entrypoint
 
 #if defined(MACH_MT6797)
 	/*
-	 * The AArch32 Preloader/LK ABI passes four 32-bit values in r4..r7.
-	 * Warm reset to AArch64 does not define the upper halves of x4..x7.
-	 * Zero-extend before saving them; otherwise stale high bits become part
-	 * of the BL33 entrypoint or argument pointers.
+	 * MT6797 boot-argument capture.  The AArch32 SPL/LK ABI hands BL31
+	 * four 32-bit values in r4..r7; warm reset to AArch64 leaves the
+	 * upper halves of x4..x7 undefined, so zero-extend before saving.
+	 * This runs before any generic or platform code can clobber them:
+	 * no upstream hook receives these registers, and later reads would
+	 * depend on register preservation across calls that is not a stable
+	 * contract.  bl31_plat_setup consumes the saved slots; they live in
+	 * a dedicated rodata section because the generic entry code clears
+	 * .data/.bss before bl31_main() reads them.
 	 */
 	mt6797_early_marker 0x41 /* A: BL31 entry reached */
 	uxtw	x24, w4
@@ -120,10 +125,6 @@ func bl31_entrypoint
 		_pie_fixup_size=BL31_LIMIT - BL31_BASE
 #endif /* RESET_TO_BL31 */
 
-#if defined(MACH_MT6797)
-	mt6797_early_marker 0x42 /* B: generic entrypoint returned */
-#endif
-
 	/* --------------------------------------------------------------------
 	 * Perform BL31 setup
 	 * --------------------------------------------------------------------
@@ -132,42 +133,6 @@ func bl31_entrypoint
 	mov	x1, x21
 	mov	x2, x22
 	mov	x3, x23
-
-#if defined(MACH_MT6797)
-	mt6797_early_marker 0x4e /* N: immediately before bl31_main */
-#if defined(X20_EARLY_MARKERS)
-	/* Bring-up probes intentionally write to the legacy fixed stack window
-	 * and the current stack.  They are not part of the boot ABI and must
-	 * not touch SRAM in a normal build. */
-	mov	x8, sp
-	mov_imm	x9, 0x114000
-	cmp	x8, x9
-	b.lo	.Lmt6797_sp_below
-	mov_imm	x9, 0x11a000
-	cmp	x8, x9
-	b.hs	.Lmt6797_sp_above
-	mt6797_early_marker 0x56 /* V: SP is in the Vendor stack window */
-	b	.Lmt6797_sp_range_done
-.Lmt6797_sp_below:
-	mt6797_early_marker 0x30 /* 0: SP is below the Vendor stack window */
-	b	.Lmt6797_sp_range_done
-.Lmt6797_sp_above:
-	mt6797_early_marker 0x58 /* X: SP is above the Vendor stack window */
-.Lmt6797_sp_range_done:
-	mov_imm	x8, 0x114ac0
-	stp	xzr, xzr, [x8, #-64]!
-	stp	xzr, xzr, [x8, #16]
-	stp	xzr, xzr, [x8, #32]
-	str	xzr, [x8, #48]
-	mt6797_early_marker 0x54 /* T: fixed Vendor stack address is writable */
-	stp	xzr, xzr, [sp, #-64]!
-	stp	xzr, xzr, [sp, #16]
-	stp	xzr, xzr, [sp, #32]
-	str	xzr, [sp, #48]
-	mt6797_early_marker 0x53 /* S: C prologue-sized stack write returned */
-	add	sp, sp, #64
-#endif /* X20_EARLY_MARKERS */
-#endif
 
 	/* --------------------------------------------------------------------
 	 * Jump to main function

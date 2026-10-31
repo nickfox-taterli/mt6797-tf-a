@@ -82,4 +82,10 @@ COLD_BOOT_SINGLE_CPU := 1
 MACH_MT6797 := 1
 $(eval $(call add_define,MACH_MT6797))
 
+# Platform-owned BL31 linker script reproducing the vendor SRAM image
+# layout (vectors at BL31_BASE, fixed data/XLAT/coherent windows).
+# This file is included before bl31/bl31.mk, whose plain assignment
+# must not win, hence override.
+override BL31_DEFAULT_LINKER_SCRIPT_SOURCE := plat/mediatek/mt6797/bl31.ld.S
+
 include lib/coreboot/coreboot.mk
