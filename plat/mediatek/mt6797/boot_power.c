@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Fixed X20 DA9214 bootstrap. Called before Linux owns I2C6/regulators. */
+#include <stdbool.h>
 #include <stdint.h>
 #include <arch_helpers.h>
 #include <common/debug.h>
@@ -27,16 +28,28 @@
 #define COMPLETE BIT_32(0)
 #define ACK_ERROR (BIT_32(1) | BIT_32(2))
 
-static int buck_transfer(uint8_t reg, uint8_t *value, bool read)
-{
-	uint16_t status = 0U;
+/* Controller setup for the high-speed push-pull FIFO transaction that the
+ * proven kernel path also uses. */
+#define I2C_CTRL_HS_PUSH_PULL U(0x2a)
+#define I2C_CTRL_READ BIT_32(4)
+#define I2C_TIMING_HS U(0x10)
+#define I2C_HS_DIVIDER U(0x0201)
+#define DA9214_ADDR_BYTE (U(0x68) << 1)
+#define I2C_FIFO_COUNT GENMASK_32(7, 4)
+/* One completion poll per microsecond; ~10 ms bounds a stuck transaction. */
+#define BUCK_COMPLETE_POLLS 10000U
 
-	/* Same high-speed push-pull FIFO transaction as the proven kernel path. */
-	mmio_write_16(I2C6 + CONTROL, U(0x2a) | (read ? BIT_32(4) : 0U));
-	mmio_write_16(I2C6 + TIMING, U(0x10));
-	mmio_write_16(I2C6 + HS, U(0x0201));
+/* Program one I2C6 FIFO transaction to the DA9214 and start it.  For a read
+ * the single-byte read length carries the register address from DATA_PORT;
+ * for a write both the register and the value go through DATA_PORT. */
+static void buck_prepare_fifo(uint8_t reg, const uint8_t *value, bool read)
+{
+	mmio_write_16(I2C6 + CONTROL,
+		      I2C_CTRL_HS_PUSH_PULL | (read ? I2C_CTRL_READ : 0U));
+	mmio_write_16(I2C6 + TIMING, I2C_TIMING_HS);
+	mmio_write_16(I2C6 + HS, I2C_HS_DIVIDER);
 	mmio_write_16(I2C6 + IO_CONFIG, 0U);
-	mmio_write_16(I2C6 + SLAVE_ADDR, U(0x68) << 1);
+	mmio_write_16(I2C6 + SLAVE_ADDR, DA9214_ADDR_BYTE);
 	mmio_write_16(I2C6 + INTR_MASK,
 		      mmio_read_16(I2C6 + INTR_MASK) & ~(ACK_ERROR | COMPLETE));
 	mmio_write_16(I2C6 + INTR_STAT, ACK_ERROR | COMPLETE);
@@ -48,25 +61,55 @@ static int buck_transfer(uint8_t reg, uint8_t *value, bool read)
 		mmio_write_16(I2C6 + DATA_PORT, *value);
 	dsbsy();
 	mmio_write_16(I2C6 + START, 1U);
-	for (unsigned int i = 0U; i < 10000U; i++) {
-		status = mmio_read_16(I2C6 + INTR_STAT);
-		if ((status & ACK_ERROR) != 0U)
-			break;
-		if ((status & COMPLETE) != 0U) {
+}
+
+/* Poll the transfer to completion.  Returns true when the transaction
+ * finished successfully, with the read byte stored in *value for a read.
+ * ACK error, timeout, or a read completion with an empty RX FIFO all return
+ * false and leave the transaction status in *status for the failure log. */
+static bool buck_wait_complete(uint8_t *value, bool read, uint16_t *status)
+{
+	unsigned int i;
+
+	for (i = 0U; i < BUCK_COMPLETE_POLLS; i++) {
+		*status = mmio_read_16(I2C6 + INTR_STAT);
+		if ((*status & ACK_ERROR) != 0U)
+			return false;
+		if ((*status & COMPLETE) != 0U) {
 			if (read) {
-				if (((mmio_read_16(I2C6 + FIFO_STAT) >> 4) & U(0xf)) < 1U)
-					break;
+				if (((mmio_read_16(I2C6 + FIFO_STAT) &
+				      I2C_FIFO_COUNT) >> 4) < 1U)
+					return false;
 				*value = (uint8_t)mmio_read_16(I2C6 + DATA_PORT);
 			}
-			return PSCI_E_SUCCESS;
+			return true;
 		}
 		udelay(1);
 	}
+	return false;
+}
+
+/* Failure cleanup: reset the controller and clear the pending events so the
+ * next transaction starts from a known state. */
+static void buck_reset_fifo(void)
+{
 	mmio_write_16(I2C6 + SOFTRESET, 1U);
 	mmio_write_16(I2C6 + INTR_STAT, ACK_ERROR | COMPLETE);
 	mmio_write_16(I2C6 + FIFO_ADDR_CLR, 1U);
-	ERROR("X20 boot buck: I2C6 reg=%x read=%u status=%x\n", reg, read, status);
-	return PSCI_E_INTERN_FAIL;
+}
+
+static int buck_transfer(uint8_t reg, uint8_t *value, bool read)
+{
+	uint16_t status = 0U;
+
+	buck_prepare_fifo(reg, value, read);
+	if (!buck_wait_complete(value, read, &status)) {
+		buck_reset_fifo();
+		ERROR("X20 boot buck: I2C6 reg=%x read=%u status=%x\n",
+		      reg, read, status);
+		return PSCI_E_INTERN_FAIL;
+	}
+	return PSCI_E_SUCCESS;
 }
 
 int mt6797_boot_buck_enable(void)

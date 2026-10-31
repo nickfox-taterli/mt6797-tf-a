@@ -50,6 +50,7 @@ void mt6797_power_off_prepare(unsigned int linear_id);
 int mt6797_power_off_finish(u_register_t mpidr);
 int mt6797_pmic_power_off(void);
 
+
 /* Values captured before el3_entrypoint_common changes the boot registers. */
 extern uint64_t mt6797_boot_argument_location;
 extern uint64_t mt6797_boot_argument_size;
