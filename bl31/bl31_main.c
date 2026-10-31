@@ -41,13 +41,6 @@
 		BL_TOTAL_IDS, PMF_DUMP_ENABLE)
 #endif
 
-#if defined(MACH_MT6797)
-extern void mt6797_early_uart_putc(unsigned int c);
-#define MT6797_MAIN_MARKER(_c) mt6797_early_uart_putc(_c)
-#else
-#define MT6797_MAIN_MARKER(_c) do { } while (0)
-#endif
-
 /*******************************************************************************
  * This function pointer is used to initialise the BL32 image. It's initialized
  * by SPD calling bl31_register_bl32_init after setting up all things necessary
@@ -112,22 +105,16 @@ static void __init bl31_lib_init(void)
 void __no_pauth bl31_main(u_register_t arg0, u_register_t arg1, u_register_t arg2,
 		u_register_t arg3)
 {
-	MT6797_MAIN_MARKER('p');
 	unsigned int core_pos = plat_my_core_pos();
-	MT6797_MAIN_MARKER('q');
 
-	MT6797_MAIN_MARKER('a');
 	/* Enable early console if EARLY_CONSOLE flag is enabled */
 	plat_setup_early_console();
-	MT6797_MAIN_MARKER('b');
 
 	/* Perform early platform-specific setup */
 	bl31_early_platform_setup2(arg0, arg1, arg2, arg3);
-	MT6797_MAIN_MARKER('c');
 
 	/* Perform late platform-specific setup */
 	bl31_plat_arch_setup();
-	MT6797_MAIN_MARKER('d');
 
 #if FEATURE_DETECTION
 	/* Detect if features enabled during compilation are supported by PE. */
@@ -347,36 +334,6 @@ void __init bl31_prepare_next_image_entry(void)
 	} else {
 		cm_prepare_el3_exit(image_type);
 	}
-}
-
-extern entry_point_info_t *bl31_plat_get_next_kernel64_ep_info(uint32_t type);
-extern entry_point_info_t *bl31_plat_get_next_kernel32_ep_info(uint32_t type);
-
-/*******************************************************************************
- * Prepare a kernel entry requested by the legacy MT6797 LK handoff.
- *
- * LK enters this path through the MTK kernel-boot SiP call.  Unlike the normal
- * BL33 path, the kernel entry point and its boot arguments are supplied by LK
- * at runtime and are stored by the platform SiP handler.
- *******************************************************************************/
-void bl31_prepare_kernel_entry(uint64_t k32_64)
-{
-	entry_point_info_t *next_image_info;
-	uint32_t image_type = NON_SECURE;
-
-	if (k32_64 == 0U) {
-		next_image_info = bl31_plat_get_next_kernel32_ep_info(image_type);
-	} else {
-		next_image_info = bl31_plat_get_next_kernel64_ep_info(image_type);
-	}
-
-	assert(next_image_info != NULL);
-	assert(image_type == GET_SECURITY_STATE(next_image_info->h.attr));
-
-	INFO("BL31: Preparing for EL3 exit to normal world, kernel\n");
-	print_entry_point_info(next_image_info);
-	cm_init_my_context(next_image_info);
-	cm_prepare_el3_exit_ns();
 }
 
 /*******************************************************************************

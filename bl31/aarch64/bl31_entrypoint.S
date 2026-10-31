@@ -135,6 +135,10 @@ func bl31_entrypoint
 
 #if defined(MACH_MT6797)
 	mt6797_early_marker 0x4e /* N: immediately before bl31_main */
+#if defined(X20_EARLY_MARKERS)
+	/* Bring-up probes intentionally write to the legacy fixed stack window
+	 * and the current stack.  They are not part of the boot ABI and must
+	 * not touch SRAM in a normal build. */
 	mov	x8, sp
 	mov_imm	x9, 0x114000
 	cmp	x8, x9
@@ -162,6 +166,7 @@ func bl31_entrypoint
 	str	xzr, [sp, #48]
 	mt6797_early_marker 0x53 /* S: C prologue-sized stack write returned */
 	add	sp, sp, #64
+#endif /* X20_EARLY_MARKERS */
 #endif
 
 	/* --------------------------------------------------------------------

@@ -6,15 +6,20 @@
 
 #include <arch_helpers.h>
 #include <common/bl_common.h>
-#include <drivers/arm/cci400.h>
 #include <lib/mmio.h>
 #include <lib/utils.h>
 #include <lib/xlat_tables/xlat_tables.h>
 
 #include <plat_private.h>
 #include <platform_def.h>
+#include <mt6797_cci400.h>
 
+#if defined(X20_EARLY_MARKERS)
 extern void mt6797_early_uart_putc(unsigned int c);
+#define MT6797_MMU_MARKER(c) mt6797_early_uart_putc(c)
+#else
+#define MT6797_MMU_MARKER(c) do { } while (0)
+#endif
 
 const mmap_region_t plat_mmap[] = {
 	MAP_REGION_FLAT(TZRAM_BASE, TZRAM_SIZE,
@@ -45,25 +50,25 @@ void plat_configure_mmu_el3(uintptr_t total_base,
 	uintptr_t coh_region_base = round_down(coh_start, PAGE_SIZE);
 	uintptr_t coh_region_limit = round_up(coh_limit, PAGE_SIZE);
 
-	mt6797_early_uart_putc('G');
+	MT6797_MMU_MARKER('G');
 	mmap_add_region(total_region_base, total_region_base,
 			total_region_limit - total_region_base,
 			MT_MEMORY | MT_RW | MT_SECURE);
-	mt6797_early_uart_putc('H');
+	MT6797_MMU_MARKER('H');
 	mmap_add_region(ro_region_base, ro_region_base,
 			ro_region_limit - ro_region_base,
 			MT_MEMORY | MT_RO | MT_SECURE);
-	mt6797_early_uart_putc('I');
+	MT6797_MMU_MARKER('I');
 	mmap_add_region(coh_region_base, coh_region_base,
 			coh_region_limit - coh_region_base,
 			MT_DEVICE | MT_RW | MT_SECURE);
-	mt6797_early_uart_putc('J');
+	MT6797_MMU_MARKER('J');
 	mmap_add(plat_mmap);
-	mt6797_early_uart_putc('K');
+	MT6797_MMU_MARKER('K');
 	init_xlat_tables();
-	mt6797_early_uart_putc('L');
+	MT6797_MMU_MARKER('L');
 	enable_mmu_el3(0);
-	mt6797_early_uart_putc('M');
+	MT6797_MMU_MARKER('M');
 }
 
 unsigned int plat_get_syscnt_freq2(void)

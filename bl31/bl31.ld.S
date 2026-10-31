@@ -176,12 +176,8 @@ SECTIONS {
 
 #   include <lib/el3_runtime/pubsub_events.h>
 
-#if !defined(MACH_MT6797)
+        /* MT6797 consumes its runtime vector above; keep any others here. */
         *(.vectors)
-#else
-        /* Keep auxiliary vector sections in the normal read-only body. */
-        *(.vectors)
-#endif
 
         __RO_END_UNALIGNED__ = .;
 
