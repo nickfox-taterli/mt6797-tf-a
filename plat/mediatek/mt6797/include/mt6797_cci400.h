@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#ifndef CCI400_H
-#define CCI400_H
+#ifndef MT6797_CCI400_H
+#define MT6797_CCI400_H
 
 #define CCI400_SLAVE_IFACE3_OFFSET		0x4000U
 #define CCI400_SLAVE_IFACE4_OFFSET		0x5000U
@@ -29,4 +29,4 @@ void cci_enable_cluster_coherency(uintptr_t mpidr);
 void cci_disable_cluster_coherency(uintptr_t mpidr);
 
 #endif /* __ASSEMBLER__ */
-#endif /* CCI400_H */
+#endif /* MT6797_CCI400_H */

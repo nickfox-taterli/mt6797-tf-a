@@ -40,7 +40,7 @@ PLAT_BL_COMMON_SOURCES := \
 
 	BL31_SOURCES += \
 	common/desc_image_load.c \
-	drivers/arm/cci400/cci400.c \
+	${MTK_PLAT_SOC}/cci400.c \
 	${GICV3_SOURCES} \
 	drivers/delay_timer/delay_timer.c \
 	drivers/delay_timer/generic_delay_timer.c \

@@ -8,7 +8,7 @@
 #include <assert.h>
 #include <stdint.h>
 
-#include <drivers/arm/cci400.h>
+#include <mt6797_cci400.h>
 #include <lib/mmio.h>
 
 #define CCI400_MAX_CLUSTERS	3U

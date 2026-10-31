@@ -12,6 +12,7 @@
 #include <drivers/console.h>
 #include <drivers/generic_delay_timer.h>
 #include <drivers/ti/uart/uart_16550.h>
+#include <lib/el3_runtime/context_mgmt.h>
 #include <lib/mmio.h>
 #include <lib/utils_def.h>
 
@@ -19,7 +20,7 @@
 #include <platform_def.h>
 #include <mtk_plat_common.h>
 
-#if defined(MACH_MT6797)
+#if defined(X20_EARLY_MARKERS)
 extern void mt6797_early_uart_putc(unsigned int c);
 #define MT6797_SETUP_MARKER(_c) mt6797_early_uart_putc(_c)
 #else
@@ -105,6 +106,35 @@ entry_point_info_t *bl31_plat_get_next_kernel32_ep_info(uint32_t type)
 	SET_SECURITY_STATE(bl33_ep_info.h.attr, NON_SECURE);
 
 	return bl33_ep_info.pc != 0U ? &bl33_ep_info : NULL;
+}
+
+/*******************************************************************************
+ * Prepare a kernel entry requested by the legacy MT6797 LK handoff.
+ *
+ * LK enters this path through the MTK kernel-boot SiP call.  Unlike the normal
+ * BL33 path, the kernel entry point and its boot arguments are supplied by LK
+ * at runtime and are stored by the platform SiP handler.  Only this platform
+ * consumes the saved kernel info, so the preparation lives here next to the
+ * entry-point getters instead of in the generic BL31 main flow.
+ *******************************************************************************/
+void bl31_prepare_kernel_entry(uint64_t k32_64)
+{
+	entry_point_info_t *next_image_info;
+	uint32_t image_type = NON_SECURE;
+
+	if (k32_64 == 0U) {
+		next_image_info = bl31_plat_get_next_kernel32_ep_info(image_type);
+	} else {
+		next_image_info = bl31_plat_get_next_kernel64_ep_info(image_type);
+	}
+
+	assert(next_image_info != NULL);
+	assert(image_type == GET_SECURITY_STATE(next_image_info->h.attr));
+
+	INFO("BL31: Preparing for EL3 exit to normal world, kernel\n");
+	print_entry_point_info(next_image_info);
+	cm_init_my_context(next_image_info);
+	cm_prepare_el3_exit_ns();
 }
 
 void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
