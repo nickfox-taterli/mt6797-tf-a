@@ -330,7 +330,17 @@ typedef struct plat_psci_ops {
 	int (*pwr_domain_on)(u_register_t mpidr);
 	void (*pwr_domain_off)(const psci_power_state_t *target_state);
 	int (*pwr_domain_off_early)(const psci_power_state_t *target_state);
-	/* Optional peer-side completion before AFFINITY_INFO reports OFF. */
+	/*
+	 * Optional peer-side completion, run by AFFINITY_INFO on the polling
+	 * CPU.  MT6797 needs this because a core that has executed
+	 * pwr_domain_off is logically stopped but its cluster rails and
+	 * coherency are removed by another core of the cluster (the BSP
+	 * MP0/MP1 flow); the dying core cannot finish that itself.  Generic
+	 * PSCI has no other hook between pwr_domain_off and the state
+	 * reporting, so a platform that models this hand-off must extend the
+	 * ops here.  psci_affinity_info() serializes the call with the
+	 * target's cpu_pd node lock, so it cannot race CPU_ON.
+	 */
 	int (*pwr_domain_off_finish)(u_register_t mpidr);
 #if PSCI_OS_INIT_MODE
 	int (*pwr_domain_validate_suspend)(

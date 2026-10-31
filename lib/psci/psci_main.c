@@ -262,11 +262,20 @@ int psci_affinity_info(u_register_t target_affinity,
 	 */
 	flush_cpu_data_by_index(target_idx, psci_svc_cpu_data);
 
+	/* Platforms without the optional peer-side completion report the
+	 * logical state directly.  See the pwr_domain_off_finish note in
+	 * plat_psci_ops for why MT6797 needs the call here: the polling CPU
+	 * finishes the cluster/rail removal the stopped core cannot do for
+	 * itself, and an unsuccessful completion must keep the target
+	 * reported ON so a later AFFINITY_INFO retries it. */
 	if (psci_plat_pm_ops->pwr_domain_off_finish == NULL) {
 		return (int)psci_get_aff_info_state_by_idx(target_idx);
 	}
 
-	/* Serialize peer-side power removal with CPU_ON for this target. */
+	/* Serialize peer-side power removal with CPU_ON for this target: the
+	 * generic cpu_pd node lock is the same one CPU_ON takes, so the
+	 * platform completion (which takes only its own locks inside) cannot
+	 * race a concurrent power-up of the same core. */
 	spin_lock(&PER_CPU_BY_INDEX(psci_cpu_pd_nodes, target_idx)->cpu_lock);
 	flush_cpu_data_by_index(target_idx, psci_svc_cpu_data);
 	state = (int)psci_get_aff_info_state_by_idx(target_idx);
