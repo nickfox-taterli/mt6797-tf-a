@@ -16,31 +16,23 @@
 	.globl	bl31_entrypoint
 	.globl	bl31_warm_entrypoint
 
-#if defined(MACH_MT6797)
 	/*
-	 * The MTK preloader has no error path after it jumps to BL31.  Keep a
-	 * bounded, pre-C-runtime marker so a failed bring-up can distinguish an
-	 * image-load/entry failure from an early architectural fault.  The UART is
-	 * already configured by the preloader at this point.
+	 * Optional platform hook for capturing boot-ABI arguments that the
+	 * previous bootloader passes in registers other than x0..x3.  A
+	 * platform that needs it builds with PLAT_EARLY_BOOT_ARG_CAPTURE_HEADER
+	 * pointing at its assembler-only macro header; the generic default is
+	 * no capture.  The macro expands inline with no stack and may not
+	 * clobber x0..x3, x20..x23 or the SP.
 	 */
-	.macro mt6797_early_marker value
-#ifdef X20_EARLY_MARKERS
-		mov	w8, #\value
-		ldr	x9, =UART0_BASE
-		mov_imm	x10, 100000
-1:
-		ldr	w11, [x9, #0x14]
-		tbz	w11, #5, 2f
-		str	w8, [x9]
-		dsb	sy
-		b	3f
-2:
-		subs	x10, x10, #1
-		b.ne	1b
-3:
+#ifdef PLAT_EARLY_BOOT_ARG_CAPTURE_HEADER
+#include PLAT_EARLY_BOOT_ARG_CAPTURE_HEADER
 #endif
+#ifndef PLAT_EARLY_BOOT_ARG_CAPTURE
+	/* Generic default: no boot-argument capture. */
+	.macro plat_early_boot_arg_capture
 	.endm
 #endif
+
 
 #if ENABLE_LFA_BL31
 	.globl	bl31_lfa_entrypoint
@@ -62,32 +54,14 @@ func bl31_entrypoint
 	mov	x22, x2
 	mov	x23, x3
 
-#if defined(MACH_MT6797)
 	/*
-	 * MT6797 boot-argument capture.  The AArch32 SPL/LK ABI hands BL31
-	 * four 32-bit values in r4..r7; warm reset to AArch64 leaves the
-	 * upper halves of x4..x7 undefined, so zero-extend before saving.
-	 * This runs before any generic or platform code can clobber them:
-	 * no upstream hook receives these registers, and later reads would
-	 * depend on register preservation across calls that is not a stable
-	 * contract.  bl31_plat_setup consumes the saved slots; they live in
-	 * a dedicated rodata section because the generic entry code clears
-	 * .data/.bss before bl31_main() reads them.
+	 * Platform hook: capture boot-ABI arguments that the previous
+	 * bootloader passes in registers other than x0..x3, before any code
+	 * can clobber them.  Empty by default; a platform that needs it
+	 * provides the macro through PLAT_EARLY_BOOT_ARG_CAPTURE_HEADER
+	 * (see the definition above).
 	 */
-	mt6797_early_marker 0x41 /* A: BL31 entry reached */
-	uxtw	x24, w4
-	uxtw	x25, w5
-	uxtw	x26, w6
-	uxtw	x27, w7
-	ldr	x8, =mt6797_boot_argument_location
-	str	x24, [x8]
-	ldr	x8, =mt6797_boot_argument_size
-	str	x25, [x8]
-	ldr	x8, =mt6797_boot_bl33_entrypoint
-	str	x26, [x8]
-	ldr	x8, =mt6797_boot_tee_argument
-	str	x27, [x8]
-#endif
+	plat_early_boot_arg_capture
 
 #if !RESET_TO_BL31
 	/* ---------------------------------------------------------------------
@@ -181,24 +155,6 @@ func bl31_entrypoint
 	b	el3_exit
 endfunc bl31_entrypoint
 
-#if defined(MACH_MT6797)
-	/* These locations must not be in .data/.bss: el3_entrypoint_common clears
-	 * those sections before bl31_main() reads the saved boot ABI values. */
-	.section .rodata.mt6797_boot_args, "a"
-	.align 3
-	.global mt6797_boot_argument_location
-mt6797_boot_argument_location:
-	.quad 0
-	.global mt6797_boot_argument_size
-mt6797_boot_argument_size:
-	.quad 0
-	.global mt6797_boot_bl33_entrypoint
-mt6797_boot_bl33_entrypoint:
-	.quad 0
-	.global mt6797_boot_tee_argument
-mt6797_boot_tee_argument:
-	.quad 0
-#endif
 
 	/* --------------------------------------------------------------------
 	 * This CPU has been physically powered up. It is either resuming from

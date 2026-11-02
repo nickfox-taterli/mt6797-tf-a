@@ -26,6 +26,11 @@ ifeq (${X20_BL33_AARCH64},1)
 $(eval $(call add_define,X20_BL33_AARCH64))
 endif
 
+# Capture the AArch32 SPL/LK boot ABI (r4..r7) before generic entry code
+# runs; see aarch64/mt6797_boot_args.S and include/plat_early_entry_macros.h.
+PLAT_EARLY_BOOT_ARG_CAPTURE_HEADER := \"plat_early_entry_macros.h\"
+$(eval $(call add_define,PLAT_EARLY_BOOT_ARG_CAPTURE_HEADER))
+
 # Bring-up only: single-character progress markers on the raw UART before the
 # C console exists. Off by default; they are pure boot noise otherwise.
 ifeq (${X20_EARLY_MARKERS},1)
@@ -52,6 +57,7 @@ PLAT_BL_COMMON_SOURCES := \
 	plat/common/plat_gicv3.c \
 	${MTK_PLAT}/common/mtk_plat_common.c \
 	${MTK_PLAT_SOC}/aarch64/plat_helpers.S \
+	${MTK_PLAT_SOC}/aarch64/mt6797_boot_args.S \
 	${MTK_PLAT_SOC}/aarch64/platform_common.c \
 	${MTK_PLAT_SOC}/bl31_plat_setup.c \
 	${MTK_PLAT_SOC}/boot_power.c \
@@ -79,8 +85,6 @@ RESET_TO_BL31 := 1
 PROGRAMMABLE_RESET_ADDRESS := 1
 COLD_BOOT_SINGLE_CPU := 1
 
-MACH_MT6797 := 1
-$(eval $(call add_define,MACH_MT6797))
 
 # Platform-owned BL31 linker script reproducing the vendor SRAM image
 # layout (vectors at BL31_BASE, fixed data/XLAT/coherent windows).
