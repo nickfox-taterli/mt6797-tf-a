@@ -14,14 +14,27 @@ PLAT_INCLUDES := -I${MTK_PLAT}/common/ \
 
 include drivers/arm/gic/v3/gicv3.mk
 
-# Production X20 builds require this. The WDT IRQ stays non-secure until
-# Linux explicitly arms secure FIQ capture; the FIQ handler never takes locks.
+# Production log discipline is NOTICE+WARNING+ERROR (30). The generic debug
+# default (INFO=40) is a bring-up tool; request it explicitly with LOG_LEVEL=40.
+# This makefile is included after the global DEBUG defaults set LOG_LEVEL, so
+# an origin check is required for the platform default to take effect.
+ifneq ($(origin LOG_LEVEL),command line)
+LOG_LEVEL		:=	30
+endif
+
+# Production X20 builds default to secure FIQ WDT capture. The WDT IRQ stays
+# non-secure until Linux explicitly arms secure FIQ capture; the FIQ handler
+# never takes locks. X20_WDT_FIQ=0 is for bring-up images without the
+# capture path only.
+X20_WDT_FIQ		?=	1
 ifeq (${X20_WDT_FIQ},1)
 $(eval $(call add_define,X20_WDT_FIQ))
 BL31_SOURCES += ${MTK_PLAT_SOC}/wdt_capture.c
 endif
 
-# U-Boot proper is AArch64; retain the established AArch32 LK ABI by default.
+# The resident BL33 is the AArch64 U-Boot proper; the legacy AArch32 LK chain
+# remains available with X20_BL33_AARCH64=0.
+X20_BL33_AARCH64	?=	1
 ifeq (${X20_BL33_AARCH64},1)
 $(eval $(call add_define,X20_BL33_AARCH64))
 endif
